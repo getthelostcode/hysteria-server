@@ -1,0 +1,21 @@
+# hysteria-server 配置文件
+# 位置：与二进制同目录，或指定 --config 路径
+
+listen: ":8080"
+
+redis:
+  addr: "127.0.0.1:6379"
+  password: ""
+  db: 0
+  pool_size: 50
+
+nodes:                    # 每节点独立 HMAC secret
+  node-01: "s3cr3t-f0r-n0d3-01"
+  node-02: "s3cr3t-f0r-n0d3-02"
+
+heartbeat:
+  ttl: "60s"             # 心跳过期时间
+  scan_interval: "30s"   # 掉线扫描间隔
+
+log:
+  level: info            # debug | info | warn | error

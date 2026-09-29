@@ -1,0 +1,24 @@
+[Unit]
+Description=Hysteria Proxy Manager Server
+After=network.target redis-server.service
+Wants=redis-server.service
+
+[Service]
+Type=simple
+User=hysteria
+Group=hysteria
+WorkingDirectory=/opt/hysteria-server
+ExecStart=/opt/hysteria-server/hysteria-server --config /opt/hysteria-server/config.yaml
+ExecReload=/bin/kill -HUP $MAINPID
+Restart=on-failure
+RestartSec=5
+LimitNOFILE=65536
+Environment=PATH=/usr/local/bin:/usr/bin:/bin
+StandardOutput=journal
+StandardError=journal
+
+# 优雅退出：SIGTERM 后等待 10 秒完成现有请求
+TimeoutStopSec=15
+
+[Install]
+WantedBy=multi-user.target
