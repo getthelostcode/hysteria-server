@@ -3,7 +3,7 @@
 // 所有 Handler 共享的约定：
 //  - 请求体 JSON 绑定使用 gin 的 ShouldBindJSON。
 //  - Redis 操作均使用带超时的 context（从 c.Request.Context() 衍生）。
-//  - 返回格式统一：{"ok": true} 或 {"code": "...", "msg": "..."}。
+//  - 返回格式统一：{"ok": true} 或 {"code": "...", "msg": "..."}.
 //
 // Handler 列表：
 //  1. PostTrafficReport   POST /api/v1/traffic/report
@@ -15,6 +15,9 @@ package main
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"net/http"
 	"strconv"
 	"time"
@@ -36,6 +39,7 @@ type TrafficUser struct {
 	UserID   string `json:"user_id" binding:"required"`
 	Upload   int64  `json:"upload" binding:"min=0"`
 	Download int64  `json:"download" binding:"min=0"`
+	Token    string `json:"token"` // 用户认证 token（HMAC，用于用户级认证）
 }
 
 type TrafficReportResp struct {
@@ -117,6 +121,7 @@ func (h *Handler) PostTrafficReport(c *gin.Context) {
 
 	// quota_exceeded 初始化为空切片，确保 JSON 序列化为 [] 而非 null。
 	quotaExceeded := make([]string, 0)
+	authFailures := make([]string, 0)
 
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
 	defer cancel()
@@ -124,6 +129,21 @@ func (h *Handler) PostTrafficReport(c *gin.Context) {
 	for _, u := range req.Users {
 		if u.UserID == "" {
 			continue // 跳过无效 user_id（不中断批处理）
+		}
+
+		// ---- 用户认证（如果配置了 users） ----
+		// 每个用户的 token 是 HMAC-SHA256(user_secret, node_id + "." + timestamp + "." + user_id) 的 hex 编码。
+		// 校验通过后才处理流量，防止节点泄露用户 secret 后伪造上报。
+		if len(h.cfg.Users) > 0 {
+			if u.Token == "" {
+				authFailures = append(authFailures, u.UserID+"缺少token")
+				continue
+			}
+			expectedToken := h.makeUserToken(req.NodeID, u.UserID, req.Timestamp)
+			if !hmac.Equal([]byte(u.Token), []byte(expectedToken)) {
+				authFailures = append(authFailures, u.UserID+"token无效")
+				continue
+			}
 		}
 
 		// ---- 幂等校验 ----
@@ -333,4 +353,16 @@ func (h *Handler) PostAdminKick(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, OKResp{OK: true})
+}
+
+// makeUserToken 返回用户 token：hex(HMAC-SHA256(user_secret, node_id + "." + timestamp + "." + user_id))
+func (h *Handler) makeUserToken(nodeID string, userID string, timestamp int64) string {
+	secret, ok := h.cfg.Users[userID]
+	if !ok {
+		return ""
+	}
+	message := nodeID + "." + strconv.FormatInt(timestamp, 10) + "." + userID
+	mac := hmac.New(sha256.New, []byte(secret))
+	mac.Write([]byte(message))
+	return hex.EncodeToString(mac.Sum(nil))
 }

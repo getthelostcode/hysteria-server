@@ -17,6 +17,7 @@ type Config struct {
 	Listen       string            `yaml:"listen"`
 	Redis        RedisConfig       `yaml:"redis"`
 	Nodes        map[string]string `yaml:"nodes"`        // node_id -> HMAC secret
+	Users        map[string]string `yaml:"users"`        // user_id -> HMAC secret（用于用户认证）
 	Heartbeat    HeartbeatConfig   `yaml:"heartbeat"`
 	Log          LogConfig         `yaml:"log"`
 }
@@ -56,6 +57,8 @@ func DefaultConfig() Config {
 		},
 	}
 }
+
+// 用户认证配置的默认值为空 map。
 
 // Load 从路径读取 YAML 配置，未指定字段回退默认值。
 // 调用方需保证填入必要字段（nodes 非空、redis.addr 非空）。
@@ -117,5 +120,14 @@ func (c *Config) NodeExists(nodeID string) bool {
 		return false
 	}
 	_, ok := c.Nodes[nodeID]
+	return ok
+}
+
+// UserExists 检查 user_id 是否在配置的 users 列表中。
+func (c *Config) UserExists(userID string) bool {
+	if c == nil {
+		return false
+	}
+	_, ok := c.Users[userID]
 	return ok
 }

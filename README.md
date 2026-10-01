@@ -44,9 +44,13 @@ redis:
   db: 0
   pool_size: 50
 
-nodes:                    # 每节点独立 HMAC secret
+nodes:                    # 每节点独立 HMAC secret（接口签名校验用）
   node-01: "s3cr3t-f0r-n0d3-01"
   node-02: "s3cr3t-f0r-n0d3-02"
+
+users:                    # （可选）用户级 HMAC secret（流量上报 token 校验用）
+  user-01: "s3cr3t-f0r-us3r-01"
+  user-02: "s3cr3t-f0r-us3r-02"
 
 heartbeat:
   ttl: "60s"             # 心跳过期时间
@@ -55,6 +59,9 @@ heartbeat:
 log:
   level: info            # debug | info | warn | error
 ```
+
+- `nodes`：必须配置，用于接口请求的 HMAC 签名校验（节点级）。
+- `users`：可选配置，用于 `POST /api/v1/traffic/report` 的用户级 token 校验。为空时不校验用户 token。
 
 ### 运行
 
@@ -131,11 +138,36 @@ nonce
 - nonce 用 Redis SETNX + TTL 10min 去重，防重放
 - 每节点独立 secret（配置中给一个 map：node_id -> secret）
 
+### 用户级 Token 认证（可选，POST /api/v1/traffic/report）
+
+如果 `config.yaml` 中配置了 `users`，则流量上报接口会额外校验每个用户的 `token` 字段。
+
+- **token 格式**：`hex(HMAC-SHA256(user_secret, node_id + "." + timestamp + "." + user_id))`
+- **node_id**：上报请求中的 `node_id` 字段
+- **timestamp**：上报请求中的 `timestamp` 字段（Unix 秒）
+- **user_id**：用户条目中的 `user_id` 字段
+- **user_secret**：`config.yaml` 中 `users` 里对应 user_id 的 secret
+
+**何时校验**：
+
+- `users` 配置为空 → 不校验，跳过此步骤。
+- `users` 配置非空 → 每个用户条目必须携带 `token`，否则记为 `authFailures` 并跳过该用户的流量处理。
+
+**示例（Python）**：
+
+```python
+import hmac, hashlib
+
+def make_token(node_id: str, user_id: str, timestamp: int, user_secret: str) -> str:
+    msg = f"{node_id}.{timestamp}.{user_id}"
+    return hmac.new(user_secret.encode(), msg.encode(), hashlib.sha256).hexdigest()
+```
+
 ### 接口列表
 
 | 方法 | 路径 | 签名 | 说明 |
 |------|------|------|------|
-| POST | /api/v1/traffic/report | 需要 | 客户端上报流量增量 |
+| POST | /api/v1/traffic/report | 需要 | 客户端上报流量增量（可选用户 token） |
 | GET | /api/v1/kick/list | 需要 | 拉取待踢用户列表 |
 | POST | /api/v1/kick/ack | 需要 | 确认踢人 |
 | POST | /api/v1/node/heartbeat | 需要 | 节点心跳上报 |
@@ -145,17 +177,26 @@ nonce
 ### POST /api/v1/traffic/report
 
 **请求：**
+
 ```json
 {
-  "node_id":   "node-01",
+  "node_id": "node-01",
   "timestamp": 1730000000,
   "users": [
-    {"user_id": "u1", "upload": 1024, "download": 2048}
+    {
+      "user_id": "u1",
+      "upload": 1024,
+      "download": 2048,
+      "token": "a1b2c3d4e5f6..."
+    }
   ]
 }
 ```
 
+- `token` 字段：当 `config.yaml` 中配置了 `users` 时为**必填**；否则可省略。
+
 **响应：**
+
 ```json
 {
   "ok": true,
@@ -164,6 +205,7 @@ nonce
 ```
 
 **要求：**
+
 - 幂等：用 (node_id, timestamp, user_id) 作为去重键，Redis SETNX + TTL 1h
 - 累加流量 + 判断配额 + 入待踢队列必须用 Lua 脚本保证原子
 - 已 blocked 的用户直接返回需踢，不累加
@@ -171,6 +213,7 @@ nonce
 ### GET /api/v1/kick/list?node_id=xxx
 
 **响应：**
+
 ```json
 {
   "kick": [
@@ -186,6 +229,7 @@ nonce
 ### POST /api/v1/kick/ack
 
 **请求：**
+
 ```json
 {
   "node_id": "node-01",
@@ -200,6 +244,7 @@ nonce
 ### POST /api/v1/node/heartbeat
 
 **请求：**
+
 ```json
 {
   "node_id": "node-01",
@@ -209,6 +254,7 @@ nonce
 ```
 
 **响应：**
+
 ```json
 {
   "ok": true,
@@ -221,6 +267,7 @@ nonce
 ### POST /api/v1/admin/kick
 
 **请求：**
+
 ```json
 {
   "node_id": "node-01",
