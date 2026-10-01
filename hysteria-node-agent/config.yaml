@@ -1,0 +1,57 @@
+# Hysteria 2 节点管理客户端配置
+# 部署在 Linux2（Hysteria 2 服务端所在机器）
+# 详细说明见 README.md
+
+# ============ 必填 ============
+
+# Linux1 HTTP API 基础地址
+linux1_api_base: "http://<linux1_ip>:<port>"
+
+# Hysteria API 配置（本机 Hysteria 2 服务端的管理接口）
+hysteria_api:
+  base_url: "http://127.0.0.1:8080"
+  secret: "your_secret"
+  # 读取后是否清零（true = 用 /traffic?clear=1，服务端返回「上次读取以来的增量」）
+  # 保持 true 即可，无需本地累计；若希望服务端保留累计值则设为 false
+  clear_after_read: true
+  timeout_seconds: 10
+
+# 上报间隔（秒），默认 60
+traffic_interval_seconds: 60
+
+# 获取踢人列表的间隔（秒），默认 10
+kick_poll_interval_seconds: 10
+
+# ============ 可选 ============
+
+# 同一用户在多少秒内不重复踢（Hysteria 客户端会自动重连，避免每轮都踢同一批人）
+kick_cooldown_seconds: 30
+
+# Linux1 接口细节，不写则用下面的默认值
+linux1:
+  kick_list_path: "/api/v1/kick/list"        # GET  → 待踢用户列表
+  traffic_report_path: "/api/v1/traffic/report" # POST → 上报流量增量
+  kick_ack_path: "/api/v1/kick/ack"          # POST → 踢人确认（需 kick_ack_enabled: true）
+  # 上报体格式：
+  #   batch    → {"node_id":..,"timestamp":..,"users":[{"user_id":"u1","tx_delta":1,"rx_delta":2,"upload":1,"download":2}]}
+  #   per_user → {"user_id":"u1","tx_delta":1,"rx_delta":2}（每用户一次请求）
+  traffic_format: "batch"
+  # 是否在踢人成功后调用 kick_ack_path 上报确认，默认 false
+  kick_ack_enabled: false
+  # 节点标识（batch 格式与 HMAC 签名都需要；默认 node-01）
+  node_id: "node-01"
+  # 非空则对 Linux1 请求做 HMAC-SHA256 签名（X-Signature/X-Timestamp/X-Nonce/X-Node-ID）
+  hmac_secret: ""
+  # 非空则附加 Authorization: Bearer <token>
+  bearer_token: ""
+  # 额外请求头，如 {"X-API-Key": "xxx"}
+  extra_headers: {}
+  timeout_seconds: 10
+  max_retries: 3
+
+# 未上报流量本地缓冲（Linux1 不可用时暂存，恢复后自动补报；置空则只在内存缓冲）
+store:
+  path: "/var/lib/hysteria-node-agent/pending.json"
+
+# debug / info / warn / error
+log_level: "info"

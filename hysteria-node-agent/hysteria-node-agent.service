@@ -1,0 +1,26 @@
+[Unit]
+Description=Hysteria 2 Node Agent (kick relay + traffic reporter)
+After=network-online.target hysteria-server.service
+Wants=network-online.target
+# 本程序是 Hysteria 的管理客户端，不管理 Hysteria 进程本身。
+# 若希望 Hysteria 重启后本程序也重启，可取消下面一行注释（把 hysteria-server 换成实际服务名）。
+# PartOf=hysteria-server.service
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/hysteria-node-agent -config /etc/hysteria-node-agent/config.yaml
+Restart=always
+RestartSec=5
+# 优雅退出：收到 SIGTERM 后会停止两个循环并落盘缓冲
+KillSignal=SIGTERM
+TimeoutStopSec=20
+
+# 安全加固：仅需访问本机 Hysteria API 与 Linux1
+NoNewPrivileges=true
+ProtectSystem=full
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/hysteria-node-agent
+
+[Install]
+WantedBy=multi-user.target
