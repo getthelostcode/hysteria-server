@@ -2,6 +2,9 @@
 
 运行在 **Linux2**（Hysteria 2 服务端所在机器）的常驻程序。
 
+> 本程序位于 [hysteria-server](https://github.com/getthelostcode/hysteria-server) 仓库的
+> `hysteria-node-agent/` 子目录下（hysteria-server 即文档中的 Linux1 服务端）。
+
 它 **不启动也不管理 Hysteria 进程**，只通过 Hysteria 2 官方 Traffic Stats API 做两件事：
 
 1. **踢人**：定时从 Linux1 的 HTTP API 拉取待踢用户列表 → 调用 Hysteria 本地 API `POST /kick` 踢下线（可选：回执给 Linux1）。
@@ -32,8 +35,8 @@
 ### 一键安装（推荐）
 
 ```bash
-git clone https://github.com/getthelostcode/hysteria-node-agent.git
-cd hysteria-node-agent
+git clone https://github.com/getthelostcode/hysteria-server.git
+cd hysteria-server/hysteria-node-agent
 sudo ./install.sh http://<linux1_ip>:<port>
 
 # 带 Hysteria 本地 API 地址与 secret（secret 为空时会提示补填）
