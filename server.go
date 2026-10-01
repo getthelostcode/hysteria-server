@@ -42,25 +42,30 @@ func NewServer(cfg Config) *Server {
 
 // Setup 注册所有路由和中间件。
 func (s *Server) Setup(rdb *Redis, scripts LuaScripts) {
-	// ---- 全局中间件 ----
-	// RequestLogger 先于 SignatureAuth，以便记录未能通过签名的请求。
+	// ---- 请求日志（覆盖所有请求，含 /healthz 与未认证请求） ----
 	s.engine.Use(RequestLogger())
-	s.engine.Use(SignatureAuth(s.cfg.Nodes, rdb.Client()))
-	s.engine.Use(RateLimit(rdb.Client()))
 
-	// HTTP Basic Auth（可选，第二层认证）
-	if s.cfg.HTTPAuth.Enabled {
-		s.engine.Use(BasicAuth(s.cfg.HTTPAuth))
-	}
-
-	// ---- 健康检查（不校验签名） ----
-	// 必须在通用签名中间件之前挂载，避免健康检查被拒。
+	// ---- 健康检查（不校验签名、不需要 Basic Auth） ----
+	// 必须在认证中间件绑定之前注册：gin 在路由注册时就把当时的全局中间件
+	// 固化进该路由的 handler 链，注册后再 Use 不会影响已注册的路由。
 	s.engine.GET("/healthz", func(c *gin.Context) {
 		c.String(http.StatusOK, "ok")
 	})
 
-	// ---- API v1 路由组 ----
+	// ---- API v1 路由组：认证中间件只作用于本组 ----
 	v1 := s.engine.Group("/api/v1")
+
+	// SignatureAuth 在 BasicAuth 之前：先验节点签名，再验用户密码。
+	v1.Use(SignatureAuth(s.cfg.Nodes, rdb.Client()))
+
+	// HTTP Basic Auth（可选，第二层认证）
+	if s.cfg.HTTPAuth.Enabled {
+		v1.Use(BasicAuth(s.cfg.HTTPAuth))
+	}
+
+	// RateLimit 最后——仅对通过认证的请求计数。
+	v1.Use(RateLimit(rdb.Client()))
+
 	{
 		v1.POST("/traffic/report", makeHandler(rdb, scripts, &s.cfg, func(h *Handler) func(*gin.Context) { return h.PostTrafficReport }))
 		v1.GET("/kick/list", makeHandler(rdb, scripts, &s.cfg, func(h *Handler) func(*gin.Context) { return h.GetKickList }))
