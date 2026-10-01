@@ -1,7 +1,7 @@
 // main.go - 程序入口：加载配置、初始化组件、启动 Server、优雅退出
 //
 // 启动流程：
-//  1. 解析命令行 flag（--config, --help, --version）。
+//  1. 解析命令行参数（-config / -help / -h / -version，及 help / version 子命令）。
 //  2. 加载 config.yaml（缺失则用默认值）。
 //  3. 校验配置（必要字段非空、duration 可解析）。
 //  4. 初始化日志（slog，级别由配置控制）。
@@ -52,16 +52,31 @@ func main() {
 	// ---- 解析命令行 flag ----
 	configPath := flag.String("config", "config.yaml", "配置文件路径")
 	help := flag.Bool("help", false, "打印帮助信息")
+	helpShort := flag.Bool("h", false, "打印帮助信息（-help 的简写）")
 	versionFlag := flag.Bool("version", false, "打印版本信息")
+	// flag 解析出错时打印自定义帮助，而非默认的 flag 列表。
+	flag.Usage = printHelp
 	flag.Parse()
 
-	if *help {
+	// 支持子命令写法：hysteria-server help / hysteria-server version
+	args := flag.Args()
+	subCmd := ""
+	if len(args) > 0 {
+		subCmd = args[0]
+	}
+
+	if *help || *helpShort || subCmd == "help" {
 		printHelp()
 		os.Exit(0)
 	}
-	if *versionFlag {
+	if *versionFlag || subCmd == "version" {
 		fmt.Println(version)
 		os.Exit(0)
+	}
+	if subCmd != "" {
+		fmt.Fprintf(os.Stderr, "未知命令: %s\n\n", subCmd)
+		printHelp()
+		os.Exit(2)
 	}
 
 	// ---- 1. 加载配置 ----
@@ -127,14 +142,19 @@ func printHelp() {
 
 用法:
   hysteria-server [选项]
+  hysteria-server <命令>
 
 选项:
   -config string
         配置文件路径 (默认: "config.yaml")
-  -help
+  -help, -h
         打印帮助信息
   -version
         打印版本信息
+
+命令:
+  help            打印帮助信息（等价于 -help）
+  version         打印版本信息（等价于 -version）
 
 信号:
   SIGINT (Ctrl+C) / SIGTERM - 优雅关闭服务器
