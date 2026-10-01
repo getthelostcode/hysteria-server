@@ -10,6 +10,7 @@
 - 接收 Client 的踢人确认，标记用户 blocked
 - 记录节点心跳，识别掉线节点
 - 管理员手动踢人接口
+- HTTP Basic Auth 多用户认证（可选，第二层认证）
 
 ## 技术栈
 
@@ -58,6 +59,15 @@ heartbeat:
 
 log:
   level: info            # debug | info | warn | error
+
+# HTTP Basic Auth（可选，多用户）
+# 启用后，除 /healthz 外所有接口需提供 Basic 认证。
+http_auth:
+enabled: false
+users:
+admin: "admin123"
+operator: "op456"
+viewer: "viewer789"
 ```
 
 - `nodes`：必须配置，用于接口请求的 HMAC 签名校验（节点级）。
@@ -162,6 +172,26 @@ def make_token(node_id: str, user_id: str, timestamp: int, user_secret: str) -> 
     msg = f"{node_id}.{timestamp}.{user_id}"
     return hmac.new(user_secret.encode(), msg.encode(), hashlib.sha256).hexdigest()
 ```
+
+### HTTP Basic Auth 多用户认证（可选）
+
+如果 `config.yaml` 中配置了 `http_auth.enabled: true` 且 `http_auth.users` 非空，则所有接口（除 `/healthz` 外）在通过 HMAC 签名校验后，还需提供 HTTP Basic Authentication。
+
+- **请求头**：`Authorization: Basic base64(username:password)`
+- **校验方式**：服务器端从 `http_auth.users` map 中查找 username，比对密码。
+- **支持多用户**：`users` 是一个 map（username -> password），例如：
+
+```yaml
+http_auth:
+  enabled: true
+  users:
+    admin: "admin123"
+    operator: "op456"
+    viewer: "viewer789"
+```
+
+- **失败时返回**：401 + `{"code": "E007", "msg": "..."}`
+- **与 HMAC 签名叠加**：Basic Auth 是第二层认证，需同时满足签名校验和 Basic Auth（二者顺序：先 Basic Auth 中间件，失败则 401；若未启用 Basic Auth 则跳过）。
 
 ### 接口列表
 
@@ -289,8 +319,9 @@ def make_token(node_id: str, user_id: str, timestamp: int, user_secret: str) -> 
 | E003 | 401 | Nonce 重放（已使用过） |
 | E004 | 401 | 未知节点（node_id 不在配置中） |
 | E005 | 400 | Body SHA256 不一致（篡改检测） |
-| E006 | 429 | 单节点限流过载 |
-| E101 | 400 | node_id 缺失 / 用户数组为空 |
+|| E006 | 429 | 单节点限流过载 |
+|| E007 | 401 | HTTP Basic Auth 认证失败（缺少/格式无效/用户名密码不匹配） |
+|| E101 | 400 | node_id 缺失 / 用户数组为空 |
 | E102 | 400 | timestamp 为空或非数值 |
 | E103 | 400 | user_id / upload / download 不合法（负数等） |
 | E104 | 500 | 服务器内部错误 |

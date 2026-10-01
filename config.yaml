@@ -19,3 +19,12 @@ heartbeat:
 
 log:
   level: info            # debug | info | warn | error
+
+# HTTP Basic Auth（可选，多用户）
+# 启用后，除 /healthz 外所有接口需提供 Basic 认证。
+http_auth:
+  enabled: false
+  users:
+    admin: "admin123"
+    operator: "op456"
+    viewer: "viewer789"

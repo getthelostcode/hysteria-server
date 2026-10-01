@@ -30,6 +30,7 @@ import (
 	"bytes"
 	"crypto/hmac"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"fmt"
 	"io"
@@ -234,6 +235,75 @@ func RateLimit(rdb *redis.Client) gin.HandlerFunc {
 			c.AbortWithStatusJSON(http.StatusTooManyRequests, ErrorJSON{
 				Code: "E006",
 				Msg:  fmt.Sprintf("单节点限流 (%d req/s)", RateLimitRPS),
+			})
+			return
+		}
+
+		c.Next()
+	}
+}
+
+// BasicAuth 返回 Gin 中间件：HTTP Basic Authentication。
+// 启用后，除 /healthz 外所有接口需提供正确的用户名/密码。
+// 适合作为第二层认证（与 HMAC 签名校验叠加使用）。
+func BasicAuth(config HTTPAuthConfig) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		// 健康检查接口不受 Basic Auth 限制
+		if c.Request.URL.Path == "/healthz" {
+			c.Next()
+			return
+		}
+
+		// 未启用时直接通过
+		if !config.Enabled || len(config.Users) == 0 {
+			c.Next()
+			return
+		}
+
+		// 检查 Authorization 头
+		authHeader := c.GetHeader("Authorization")
+		if authHeader == "" {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, ErrorJSON{
+				Code: "E007",
+				Msg:  "缺少 Basic 认证",
+			})
+			return
+		}
+
+		// 解析 Basic auth: "Basic base64(username:password)"
+		if len(authHeader) < 6 || authHeader[:6] != "Basic " {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, ErrorJSON{
+				Code: "E007",
+				Msg:  "认证格式无效",
+			})
+			return
+		}
+
+		payload, err := base64.StdEncoding.DecodeString(authHeader[6:])
+		if err != nil {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, ErrorJSON{
+				Code: "E007",
+				Msg:  "认证解码失败",
+			})
+			return
+		}
+
+		// 格式: "username:password"
+		credentials := strings.SplitN(string(payload), ":", 2)
+		if len(credentials) != 2 {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, ErrorJSON{
+				Code: "E007",
+				Msg:  "认证格式无效",
+			})
+			return
+		}
+
+		// 从用户 map 中查找密码并验证
+		expectedPassword, ok := config.Users[credentials[0]]
+		if !ok || expectedPassword != credentials[1] {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, ErrorJSON{
+				Code: "E007",
+				Msg:  "认证失败",
 			})
 			return
 		}

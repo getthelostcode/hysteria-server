@@ -48,6 +48,11 @@ func (s *Server) Setup(rdb *Redis, scripts LuaScripts) {
 	s.engine.Use(SignatureAuth(s.cfg.Nodes, rdb.Client()))
 	s.engine.Use(RateLimit(rdb.Client()))
 
+	// HTTP Basic Auth（可选，第二层认证）
+	if s.cfg.HTTPAuth.Enabled {
+		s.engine.Use(BasicAuth(s.cfg.HTTPAuth))
+	}
+
 	// ---- 健康检查（不校验签名） ----
 	// 必须在通用签名中间件之前挂载，避免健康检查被拒。
 	s.engine.GET("/healthz", func(c *gin.Context) {

@@ -18,6 +18,7 @@ type Config struct {
 	Redis        RedisConfig       `yaml:"redis"`
 	Nodes        map[string]string `yaml:"nodes"`        // node_id -> HMAC secret
 	Users        map[string]string `yaml:"users"`        // user_id -> HMAC secret（用于用户认证）
+	HTTPAuth     HTTPAuthConfig    `yaml:"http_auth"`    // HTTP Basic Auth 配置（可选）
 	Heartbeat    HeartbeatConfig   `yaml:"heartbeat"`
 	Log          LogConfig         `yaml:"log"`
 }
@@ -38,6 +39,14 @@ type LogConfig struct {
 	Level string `yaml:"level"` // debug|info|warn|error
 }
 
+// HTTPAuthConfig 存储 HTTP Basic Auth 多用户凭据。
+// 启用后，所有接口（除 /healthz 外）需提供 Basic 认证头。
+// 格式：Authorization: Basic base64(username:password)，服务器端校验 username 是否存在且密码匹配。
+type HTTPAuthConfig struct {
+	Enabled bool             `yaml:"enabled"` // 是否启用
+	Users   map[string]string `yaml:"users"`  // username -> password（多用户）
+}
+
 // DefaultConfig 返回带默认值的配置（供合并使用）。
 func DefaultConfig() Config {
 	return Config{
@@ -47,6 +56,11 @@ func DefaultConfig() Config {
 			Password: "",
 			DB:       0,
 			PoolSize: 50,
+		},
+		Users: make(map[string]string),
+		HTTPAuth: HTTPAuthConfig{
+			Enabled: false,
+			Users:   make(map[string]string),
 		},
 		Heartbeat: HeartbeatConfig{
 			TTL:          "60s",
